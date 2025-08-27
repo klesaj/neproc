@@ -92,6 +92,7 @@ eval env = \case
   Sinh e  -> sinh (eval env e)
   Cosh e  -> cosh (eval env e)
 
+-- derivator
 derive :: Var -> Expr -> Expr
 derive x = \case
   C _     -> C 0
@@ -123,6 +124,8 @@ derive x = \case
 replace :: Int -> a -> [a] -> [a]
 replace i x xs = let (l,_:r) = splitAt i xs in l ++ x:r
 
+
+-- simplifier
 simplify :: Expr -> Expr
 simplify = fixpoint step
   where
@@ -143,25 +146,30 @@ step = \case
   Pow b e     -> Pow (simplify b) (simplify e)
   other -> other
 
+
+-- approximate equality for testing
+approx :: Double -> Double -> Bool
+approx a b = abs (a-b) <= 1e-6 * (1 + max (abs a) (abs b))
+
+finiteDiff :: M.Map Var Double -> Expr -> Double
+finiteDiff env f =
+  let h  = 1e-6
+      x0 = env M.! "x"
+      envL = M.insert "x" (x0 - h) env
+      envR = M.insert "x" (x0 + h) env
+  in (eval envR f - eval envL f) / (2*h)
+
+
 -- main function for testing
 main :: IO ()
 main = do
-  putStrLn $ "Simplifier test: (x+0)"
-  putStrLn $ "Expected: x"
-  putStrLn $ "Actual:   " ++ pp (simplify (Add [V "x", C 0]))
-  putStrLn $ ""
+  let x = V "x"
+      env = M.fromList [("x", 2.0)]
+  putStrLn ("d/dx x = " ++ pp (derive "x" x))
+  let f = Mul [x,x]
+  putStrLn ("f(x)   = " ++ pp f)
+  let df = simplify (derive "x" f)
+  putStrLn ("f'(x)  = " ++ pp df)
+  putStrLn ("df(2) ~= " ++ show (eval env df) ++ " vs FD " ++ show (finiteDiff env f))
 
-  putStrLn $ "Simplifier test: (x*1)"
-  putStrLn $ "Expected: x"
-  putStrLn $ "Actual:   " ++ pp (simplify (Mul [V "x", C 1]))
-  putStrLn $ ""
 
-  putStrLn $ "Simplifier test: ((x^1))"
-  putStrLn $ "Expected: x"
-  putStrLn $ "Actual:   " ++ pp (simplify (Pow (V "x") (C 1)))
-  putStrLn $ ""
-
-  putStrLn $ "Simplifier test: ((x^0))"
-  putStrLn $ "Expected: 1.0"
-  putStrLn $ "Actual:   " ++ pp (simplify (Pow (V "x") (C 0)))
-  putStrLn $ ""
