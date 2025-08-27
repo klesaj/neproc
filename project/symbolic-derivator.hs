@@ -85,15 +85,51 @@ eval env = \case
   Sinh e  -> sinh (eval env e)
   Cosh e  -> cosh (eval env e)
 
+derive :: Var -> Expr -> Expr
+derive x = \case
+  C _     -> C 0
+  V y     -> C (if x == y then 1 else 0)
+  Neg e   -> Neg (derive x e)
+  Add es  -> sAdd (map (derive x) es)
+  Mul es  -> sAdd [ sMul (replace i (derive x ei) es)
+                  | (i,ei) <- zip [0..] es]
+  Div f g -> Div (sAdd [ sMul [derive x f, g]
+                       , Neg (sMul [f, derive x g])])
+                  (Pow g (C 2))
+  Pow f (C n) -> sMul [ C n, Pow f (sAdd [C n, C (-1)]), derive x f]
+  e -> error ("derive: unsupported " ++ show e)
+
+replace :: Int -> a -> [a] -> [a]
+replace i x xs = let (l,_:r) = splitAt i xs in l ++ x:r
+
 -- main function for testing
 main :: IO ()
 main = do
-  putStrLn $ "Expected: (x+1.0)"
-  putStrLn $ "Actual:   " ++ pp (Add [V "x", C 1])
-  putStrLn $ "Expected: (1.0+2.0+y)"
-  putStrLn $ "Actual:   " ++ pp (sAdd [C 1, Add [C 2, V "y"]])
-  let env = M.fromList [("x", 2), ("y", 3)]
-  putStrLn $ "Expected: 3.0"
-  putStrLn $ "Actual:   " ++ show (eval env (Add [V "x", C 1]))
-  putStrLn $ "Expected: 6.0"
-  putStrLn $ "Actual:   " ++ show (eval env (sAdd [C 1, Add [C 2, V "y"]]))
+  putStrLn $ "Derivative of x w.r.t x"
+  putStrLn $ "Expected: 1.0"
+  putStrLn $ "Actual:   " ++ pp (derive "x" (V "x"))
+  putStrLn $ ""
+
+  putStrLn $ "Derivative of y w.r.t x"
+  putStrLn $ "Expected: 0.0"
+  putStrLn $ "Actual:   " ++ pp (derive "x" (V "y"))
+  putStrLn $ ""
+
+  putStrLn $ "Derivative of (x+1) w.r.t x"
+  putStrLn $ "Expected: 1.0"
+  putStrLn $ "Actual:   " ++ pp (derive "x" (Add [V "x", C 1]))
+  putStrLn $ ""
+
+  putStrLn $ "Derivative of (x*y) w.r.t x"
+  putStrLn $ "Expected: (1.0*y+x*0.0)"
+  putStrLn $ "Actual:   " ++ pp (derive "x" (Mul [V "x", V "y"]))
+  putStrLn $ ""
+
+  putStrLn $ "Derivative of (x/y) w.r.t x"
+  putStrLn $ "Expected: ((1.0*y-(x*0.0))/(y^2.0))"
+  putStrLn $ "Actual:   " ++ pp (derive "x" (Div (V "x") (V "y")))
+  putStrLn $ ""
+
+  putStrLn $ "Derivative of (x^3) w.r.t x"
+  putStrLn $ "Expected: (3.0*(x^(3.0+(-1.0)))*1.0)"
+  putStrLn $ "Actual:   " ++ pp (derive "x" (Pow (V "x") (C 3)))
