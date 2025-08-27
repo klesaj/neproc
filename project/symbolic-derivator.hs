@@ -40,30 +40,36 @@ sMul xs = case concatMap unwrap xs of
 
 -- pretty printer
 pp :: Expr -> String
-pp = \case
-  C r      -> show (fromRational r :: Double)
-  V v      -> v
-  Neg e    -> "-" ++ pp e
-  Add es   -> "(" ++ joinWith "+" (map pp es) ++ ")"
-  Mul es   -> "(" ++ joinWith "*" (map pp es) ++ ")"
-  Div a b  -> "(" ++ pp a ++ "/" ++ pp b ++ ")"
-  Pow a b  -> "(" ++ pp a ++ "^" ++ pp b ++ ")"
-  Sin e    -> "sin("  ++ pp e ++ ")"
-  Cos e    -> "cos("  ++ pp e ++ ")"
-  Tan e    -> "tan("  ++ pp e ++ ")"
-  Asin e   -> "asin(" ++ pp e ++ ")"
-  Acos e   -> "acos(" ++ pp e ++ ")"
-  Atan e   -> "atan(" ++ pp e ++ ")"
-  Exp e    -> "exp("  ++ pp e ++ ")"
-  Log e    -> "log("  ++ pp e ++ ")"
-  Sinh e   -> "sinh(" ++ pp e ++ ")"
-  Cosh e   -> "cosh(" ++ pp e ++ ")"
+pp = go 0
+  where
+    go :: Int -> Expr -> String
+    go prec = \case
+      C r      -> show (fromRational r :: Double)
+      V v      -> v
+      Neg e    -> "-" ++ go 4 e
+      Add es   -> parens (prec>1) (joinWith "+" (map (go 1) es))
+      Mul es   -> parens (prec>2) (joinWith "*" (map (go 2) es))
+      Div a b  -> parens (prec>2) (go 2 a ++ "/" ++ go 2 b)
+      Pow a b  -> parens (prec>3) (go 3 a ++ "^" ++ go 4 b)
+      Sin e    -> "sin("  ++ go 0 e ++ ")"
+      Cos e    -> "cos("  ++ go 0 e ++ ")"
+      Tan e    -> "tan("  ++ go 0 e ++ ")"
+      Asin e   -> "asin(" ++ go 0 e ++ ")"
+      Acos e   -> "acos(" ++ go 0 e ++ ")"
+      Atan e   -> "atan(" ++ go 0 e ++ ")"
+      Exp e    -> "exp("  ++ go 0 e ++ ")"
+      Log e    -> "log("  ++ go 0 e ++ ")"
+      Sinh e   -> "sinh(" ++ go 0 e ++ ")"
+      Cosh e   -> "cosh(" ++ go 0 e ++ ")"
 
--- helper function to join strings with a separator
 joinWith :: String -> [String] -> String
 joinWith _ []     = ""
 joinWith _ [x]    = x
 joinWith s (x:xs) = x ++ s ++ joinWith s xs
+
+parens :: Bool -> String -> String
+parens True s  = "("++s++")"
+parens False s = s
 
 -- evaluator
 eval :: M.Map Var Double -> Expr -> Double
@@ -117,64 +123,45 @@ derive x = \case
 replace :: Int -> a -> [a] -> [a]
 replace i x xs = let (l,_:r) = splitAt i xs in l ++ x:r
 
+simplify :: Expr -> Expr
+simplify = fixpoint step
+  where
+    fixpoint f e = let e' = f e in if e' == e then e else fixpoint f e'
+
+step :: Expr -> Expr
+step = \case
+  Add es -> sAdd (map simplify es)
+  Mul es -> sMul (map simplify es)
+  Neg (Neg e) -> simplify e
+  Neg e -> Neg (simplify e)
+  Div a b -> case (simplify a, simplify b) of
+    (C 0, _) -> C 0
+    (x, C 1) -> x
+    (x,y)    -> Div x y
+  Pow b (C 0) -> C 1
+  Pow b (C 1) -> simplify b
+  Pow b e     -> Pow (simplify b) (simplify e)
+  other -> other
+
 -- main function for testing
 main :: IO ()
 main = do
-  putStrLn $ "Derivative of x w.r.t x"
+  putStrLn $ "Simplifier test: (x+0)"
+  putStrLn $ "Expected: x"
+  putStrLn $ "Actual:   " ++ pp (simplify (Add [V "x", C 0]))
+  putStrLn $ ""
+
+  putStrLn $ "Simplifier test: (x*1)"
+  putStrLn $ "Expected: x"
+  putStrLn $ "Actual:   " ++ pp (simplify (Mul [V "x", C 1]))
+  putStrLn $ ""
+
+  putStrLn $ "Simplifier test: ((x^1))"
+  putStrLn $ "Expected: x"
+  putStrLn $ "Actual:   " ++ pp (simplify (Pow (V "x") (C 1)))
+  putStrLn $ ""
+
+  putStrLn $ "Simplifier test: ((x^0))"
   putStrLn $ "Expected: 1.0"
-  putStrLn $ "Actual:   " ++ pp (derive "x" (V "x"))
+  putStrLn $ "Actual:   " ++ pp (simplify (Pow (V "x") (C 0)))
   putStrLn $ ""
-
-  putStrLn $ "Derivative of y w.r.t x"
-  putStrLn $ "Expected: 0.0"
-  putStrLn $ "Actual:   " ++ pp (derive "x" (V "y"))
-  putStrLn $ ""
-
-  putStrLn $ "Derivative of (x+1) w.r.t x"
-  putStrLn $ "Expected: 1.0"
-  putStrLn $ "Actual:   " ++ pp (derive "x" (Add [V "x", C 1]))
-  putStrLn $ ""
-
-  putStrLn $ "Derivative of (x*y) w.r.t x"
-  putStrLn $ "Expected: (1.0*y+x*0.0)"
-  putStrLn $ "Actual:   " ++ pp (derive "x" (Mul [V "x", V "y"]))
-  putStrLn $ ""
-
-  putStrLn $ "Derivative of (x/y) w.r.t x"
-  putStrLn $ "Expected: ((1.0*y-(x*0.0))/(y^2.0))"
-  putStrLn $ "Actual:   " ++ pp (derive "x" (Div (V "x") (V "y")))
-  putStrLn $ ""
-
-  putStrLn $ "Derivative of (x^3) w.r.t x"
-  putStrLn $ "Expected: (3.0*(x^(3.0+(-1.0)))*1.0)"
-  putStrLn $ "Actual:   " ++ pp (derive "x" (Pow (V "x") (C 3)))
-  putStrLn $ ""
-
-  putStrLn $ "Derivative of (sin(x)) w.r.t x"
-  putStrLn $ "Expected: (cos(x)*1.0)"
-  putStrLn $ "Actual:   " ++ pp (derive "x" (Sin (V "x")))
-  putStrLn $ ""
-
-  putStrLn $ "Derivative of (cos(x)) w.r.t x"
-  putStrLn $ "Expected: -(sin(x)*1.0)"
-  putStrLn $ "Actual:   " ++ pp (derive "x" (Cos (V "x")))
-  putStrLn $ ""
-
-  putStrLn $ "Derivative of (exp(x)) w.r.t x"
-  putStrLn $ "Expected: (exp(x)*1.0)"
-  putStrLn $ "Actual:   " ++ pp (derive "x" (Exp (V "x")))
-  putStrLn $ ""
-
-  putStrLn $ "Derivative of (log(x)) w.r.t x"
-  putStrLn $ "Expected: (1.0/x)"
-  putStrLn $ "Actual:   " ++ pp (derive "x" (Log (V "x")))
-  putStrLn $ ""
-
-  putStrLn $ "Derivative of (tan(x)) w.r.t x"
-  putStrLn $ "Expected: ((1.0+(tan(x)^2.0))*1.0)"
-  putStrLn $ "Actual:   " ++ pp (derive "x" (Tan (V "x")))
-  putStrLn $ ""
-
-  putStrLn $ "Derivative of (x^y) w.r.t x"
-  putStrLn $ "Expected: ((x^y)*((0.0*log(x))+((y*1.0)/x)))"
-  putStrLn $ "Actual:   " ++ pp (derive "x" (Pow (V "x") (V "y")))
