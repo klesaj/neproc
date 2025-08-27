@@ -143,6 +143,7 @@ step = \case
     (C 0, _) -> C 0
     (x, C 1) -> x
     (x,y)    -> Div x y
+  Pow (C 0) (C 0) -> Pow (C 0) (C 0)   -- keep 0^0 since it is undefined
   Pow b (C 0) -> C 1
   Pow b (C 1) -> simplify b
   Pow b e     -> Pow (simplify b) (simplify e)
