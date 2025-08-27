@@ -3,6 +3,8 @@ module Main where
 
 type Var = String
 
+
+-- expression data type
 data Expr
   = C Rational
   | V Var
@@ -17,6 +19,25 @@ data Expr
   | Sinh Expr | Cosh Expr
   deriving (Eq, Ord, Show)
 
+
+-- smart constructors to simplify add and mul expressions
+sAdd :: [Expr] -> Expr
+sAdd xs = case concatMap unwrap xs of
+  []  -> C 0
+  [y] -> y
+  ys  -> Add ys
+  where unwrap (Add ys) = ys
+        unwrap y        = [y]
+
+sMul :: [Expr] -> Expr
+sMul xs = case concatMap unwrap xs of
+  []  -> C 1
+  [y] -> y
+  ys  -> Mul ys
+  where unwrap (Mul ys) = ys
+        unwrap y        = [y]
+
+-- pretty printer
 pp :: Expr -> String
 pp = \case
   C r      -> show (fromRational r :: Double)
@@ -37,10 +58,15 @@ pp = \case
   Sinh e   -> "sinh(" ++ pp e ++ ")"
   Cosh e   -> "cosh(" ++ pp e ++ ")"
 
+-- helper function to join strings with a separator
 joinWith :: String -> [String] -> String
 joinWith _ []     = ""
 joinWith _ [x]    = x
 joinWith s (x:xs) = x ++ s ++ joinWith s xs
 
+
+-- main function for testing
 main :: IO ()
-main = putStrLn (pp (Add [V "x", C 1]))
+main = do
+  putStrLn (pp (Add [V "x", C 1]))
+  putStrLn ("sAdd [C 1, Add [C 2, V \"y\"]] = " ++ pp (sAdd [C 1, Add [C 2, V "y"]]))
