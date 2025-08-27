@@ -1,8 +1,9 @@
 {-# LANGUAGE LambdaCase #-}
 module Main where
 
-type Var = String
+import qualified Data.Map as M
 
+type Var = String
 
 -- expression data type
 data Expr
@@ -18,7 +19,6 @@ data Expr
   | Exp Expr | Log Expr
   | Sinh Expr | Cosh Expr
   deriving (Eq, Ord, Show)
-
 
 -- smart constructors to simplify add and mul expressions
 sAdd :: [Expr] -> Expr
@@ -64,9 +64,36 @@ joinWith _ []     = ""
 joinWith _ [x]    = x
 joinWith s (x:xs) = x ++ s ++ joinWith s xs
 
+-- evaluator
+eval :: M.Map Var Double -> Expr -> Double
+eval env = \case
+  C r     -> fromRational r
+  V v     -> env M.! v
+  Neg e   -> negate (eval env e)
+  Add es  -> sum (map (eval env) es)
+  Mul es  -> product (map (eval env) es)
+  Div a b -> eval env a / eval env b
+  Pow a b -> eval env a ** eval env b
+  Sin e   -> sin (eval env e)
+  Cos e   -> cos (eval env e)
+  Tan e   -> tan (eval env e)
+  Asin e  -> asin (eval env e)
+  Acos e  -> acos (eval env e)
+  Atan e  -> atan (eval env e)
+  Exp e   -> exp (eval env e)
+  Log e   -> log (eval env e)
+  Sinh e  -> sinh (eval env e)
+  Cosh e  -> cosh (eval env e)
 
 -- main function for testing
 main :: IO ()
 main = do
-  putStrLn (pp (Add [V "x", C 1]))
-  putStrLn ("sAdd [C 1, Add [C 2, V \"y\"]] = " ++ pp (sAdd [C 1, Add [C 2, V "y"]]))
+  putStrLn $ "Expected: (x+1.0)"
+  putStrLn $ "Actual:   " ++ pp (Add [V "x", C 1])
+  putStrLn $ "Expected: (1.0+2.0+y)"
+  putStrLn $ "Actual:   " ++ pp (sAdd [C 1, Add [C 2, V "y"]])
+  let env = M.fromList [("x", 2), ("y", 3)]
+  putStrLn $ "Expected: 3.0"
+  putStrLn $ "Actual:   " ++ show (eval env (Add [V "x", C 1]))
+  putStrLn $ "Expected: 6.0"
+  putStrLn $ "Actual:   " ++ show (eval env (sAdd [C 1, Add [C 2, V "y"]]))
