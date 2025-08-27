@@ -2,6 +2,7 @@
 module Main where
 
 import qualified Data.Map as M
+import Data.Ratio ((%))
 
 type Var = String
 
@@ -97,7 +98,21 @@ derive x = \case
                        , Neg (sMul [f, derive x g])])
                   (Pow g (C 2))
   Pow f (C n) -> sMul [ C n, Pow f (sAdd [C n, C (-1)]), derive x f]
-  e -> error ("derive: unsupported " ++ show e)
+  Pow f g -> sMul [ Pow f g
+                  , sAdd [ sMul [derive x g, Log f]
+                         , Div (sMul [g, derive x f]) f ] ]
+  Sin e   -> sMul [Cos e, derive x e]
+  Cos e   -> Neg (sMul [Sin e, derive x e])
+  Tan e   -> sMul [sAdd [C 1, Pow (Tan e) (C 2)], derive x e]
+  Exp e   -> sMul [Exp e, derive x e]
+  Log e   -> Div (derive x e) e
+  Sinh e  -> sMul [Cosh e, derive x e]
+  Cosh e  -> sMul [Sinh e, derive x e]
+  Asin e  -> Div (derive x e)
+                  (Pow (sAdd [C 1, Neg (Pow e (C 2))]) (C (1%2)))
+  Acos e  -> Neg (Div (derive x e)
+                  (Pow (sAdd [C 1, Neg (Pow e (C 2))]) (C (1%2))))
+  Atan e  -> Div (derive x e) (sAdd [C 1, Pow e (C 2)])
 
 replace :: Int -> a -> [a] -> [a]
 replace i x xs = let (l,_:r) = splitAt i xs in l ++ x:r
@@ -133,3 +148,33 @@ main = do
   putStrLn $ "Derivative of (x^3) w.r.t x"
   putStrLn $ "Expected: (3.0*(x^(3.0+(-1.0)))*1.0)"
   putStrLn $ "Actual:   " ++ pp (derive "x" (Pow (V "x") (C 3)))
+  putStrLn $ ""
+
+  putStrLn $ "Derivative of (sin(x)) w.r.t x"
+  putStrLn $ "Expected: (cos(x)*1.0)"
+  putStrLn $ "Actual:   " ++ pp (derive "x" (Sin (V "x")))
+  putStrLn $ ""
+
+  putStrLn $ "Derivative of (cos(x)) w.r.t x"
+  putStrLn $ "Expected: -(sin(x)*1.0)"
+  putStrLn $ "Actual:   " ++ pp (derive "x" (Cos (V "x")))
+  putStrLn $ ""
+
+  putStrLn $ "Derivative of (exp(x)) w.r.t x"
+  putStrLn $ "Expected: (exp(x)*1.0)"
+  putStrLn $ "Actual:   " ++ pp (derive "x" (Exp (V "x")))
+  putStrLn $ ""
+
+  putStrLn $ "Derivative of (log(x)) w.r.t x"
+  putStrLn $ "Expected: (1.0/x)"
+  putStrLn $ "Actual:   " ++ pp (derive "x" (Log (V "x")))
+  putStrLn $ ""
+
+  putStrLn $ "Derivative of (tan(x)) w.r.t x"
+  putStrLn $ "Expected: ((1.0+(tan(x)^2.0))*1.0)"
+  putStrLn $ "Actual:   " ++ pp (derive "x" (Tan (V "x")))
+  putStrLn $ ""
+
+  putStrLn $ "Derivative of (x^y) w.r.t x"
+  putStrLn $ "Expected: ((x^y)*((0.0*log(x))+((y*1.0)/x)))"
+  putStrLn $ "Actual:   " ++ pp (derive "x" (Pow (V "x") (V "y")))
