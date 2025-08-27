@@ -3,7 +3,7 @@ module Main where
 
 import qualified Data.Map as M
 import Data.Ratio ((%))
-import Data.List (intersperse, sortBy, groupBy)
+import Data.List (sortBy, groupBy)
 import Data.Function (on)
 
 type Var = String
@@ -172,6 +172,8 @@ combineLike xs =
                    1 -> e
                    n -> sMul [C n, e]
 
+
+-- Simplify addition and multiplication
 simplifyAdd :: [Expr] -> Expr
 simplifyAdd es =
   let flat = concatMap (\case Add xs -> xs; x -> [x]) es
@@ -250,17 +252,62 @@ testSimplifier = do
   t "Pow 0" (Pow (V "x") (C 0)) (C 1)
   t "Pow 1" (Pow (V "x") (C 1)) (V "x")
 
+-- Unit tests for derivator (symbolic equality)
+testDerivatorSymbolic :: IO ()
+testDerivatorSymbolic = do
+  let t name expr var expected =
+        let got = simplify (derive var expr)
+        in if got == expected
+           then putStrLn $ "[OK] " ++ name ++
+                "\n  expr:      " ++ pp expr ++
+                "\n  d/d" ++ var ++ ":    " ++ pp got ++
+                "\n  expected:  " ++ pp expected ++ "\n"
+           else putStrLn $ "[FAIL] " ++ name ++
+                "\n  expr:      " ++ pp expr ++
+                "\n  d/d" ++ var ++ ":    " ++ pp got ++
+                "\n  expected:  " ++ pp expected ++ "\n"
+
+  t "d/dx x" (V "x") "x" (C 1)
+  t "d/dx y" (V "y") "x" (C 0)
+  t "d/dx x^2" (Pow (V "x") (C 2)) "x" (Mul [C 2, V "x"])
+  t "d/dx sin(x)" (Sin (V "x")) "x" (Cos (V "x"))
+  t "d/dx x*x" (Mul [V "x", V "x"]) "x" (Mul [C 2, V "x"])
+  t "d/dx x+2" (Add [V "x", C 2]) "x" (C 1)
+
+-- Unit tests for derivator (numerical correctness)
+testDerivatorNumeric :: IO ()
+testDerivatorNumeric = do
+  let t name expr var env =
+        let df = simplify (derive var expr)
+            fd = finiteDiff env expr
+            got = eval env df
+        in if approx got fd
+           then putStrLn $ "[OK] " ++ name ++
+                "\n  expr:      " ++ pp expr ++
+                "\n  env:       " ++ show env ++
+                "\n  symbolic:  " ++ show got ++
+                "\n  finiteDiff:" ++ show fd ++ "\n"
+           else putStrLn $ "[FAIL] " ++ name ++
+                "\n  expr:      " ++ pp expr ++
+                "\n  env:       " ++ show env ++
+                "\n  symbolic:  " ++ show got ++
+                "\n  finiteDiff:" ++ show fd ++ "\n"
+
+  let env = M.fromList [("x", 2.0)]
+  t "d/dx x^2" (Pow (V "x") (C 2)) "x" env
+  t "d/dx sin(x)" (Sin (V "x")) "x" env
+  t "d/dx x*x" (Mul [V "x", V "x"]) "x" env
+  t "d/dx x+2" (Add [V "x", C 2]) "x" env
+  t "d/dx exp(x)" (Exp (V "x")) "x" env
+
 -- main function for testing
 main :: IO ()
 main = do
+  putStrLn "\n=== Simplifier tests ==="
   testSimplifier
-  let x = V "x"
-      env = M.fromList [("x", 2.0)]
-  putStrLn ("d/dx x = " ++ pp (derive "x" x))
-  let f = Mul [x,x]
-  putStrLn ("f(x)   = " ++ pp f)
-  let df = simplify (derive "x" f)
-  putStrLn ("f'(x)  = " ++ pp df)
-  putStrLn ("df(2) ~= " ++ show (eval env df) ++ " vs FD " ++ show (finiteDiff env f))
+  putStrLn "\n=== Derivator symbolic tests ==="
+  testDerivatorSymbolic
+  putStrLn "\n=== Derivator numeric tests ==="
+  testDerivatorNumeric
 
 
