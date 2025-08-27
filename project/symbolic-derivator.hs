@@ -3,6 +3,8 @@ module Main where
 
 import qualified Data.Map as M
 import Data.Ratio ((%))
+import Data.List (intersperse, sortBy, groupBy)
+import Data.Function (on)
 
 type Var = String
 
@@ -133,8 +135,8 @@ simplify = fixpoint step
 
 step :: Expr -> Expr
 step = \case
-  Add es -> sAdd (map simplify es)
-  Mul es -> sMul (map simplify es)
+  Add es -> simplifyAdd (map simplify es)
+  Mul es -> simplifyMul (map simplify es)
   Neg (Neg e) -> simplify e
   Neg e -> Neg (simplify e)
   Div a b -> case (simplify a, simplify b) of
@@ -146,6 +148,65 @@ step = \case
   Pow b e     -> Pow (simplify b) (simplify e)
   other -> other
 
+-- Split out all rationals
+splitConsts :: [Expr] -> ([Rational],[Expr])
+splitConsts = foldr f ([],[])
+  where
+    f (C r) (cs,rs) = (r:cs, rs)
+    f x (cs,rs)     = (cs, x:rs)
+
+-- Group like terms and sum coefficients
+combineLike :: [Expr] -> [Expr]
+combineLike xs =
+  let keyed  = map splitCoeff xs
+      groups = groupBy ((==) `on` snd) (sortBy (compare `on` snd) keyed)
+      built  = [ build (map fst g) (snd (head g)) | g <- groups ]
+  in filter (/= C 0) built
+  where
+    splitCoeff (Mul (C c:ys)) = (c, sMul ys)
+    splitCoeff (C c)          = (c, C 1)
+    splitCoeff e              = (1, e)
+    build cs e = case sum cs of
+                   0 -> C 0
+                   1 -> e
+                   n -> sMul [C n, e]
+
+simplifyAdd :: [Expr] -> Expr
+simplifyAdd es =
+  let flat = concatMap (\case Add xs -> xs; x -> [x]) es
+      simp = filter (/= C 0) flat
+      (consts, rest) = splitConsts simp
+      grouped = combineLike rest
+      csum = sum consts
+      result = (if csum /= 0 then [C csum] else []) ++ grouped
+  in case result of
+      []  -> C 0
+      [x] -> x
+      xs  -> Add (sortBy orderExpr xs)
+
+simplifyMul :: [Expr] -> Expr
+simplifyMul es =
+  let flat = concatMap (\case Mul xs -> xs; x -> [x]) es
+      simp = filter (/= C 1) flat
+      (consts, rest) = splitConsts simp
+      cprod = product consts
+  in if any (==0) consts then C 0 else
+       case (cprod, rest) of
+        (1,[]) -> C 1
+        (1,[x]) -> x
+        (1,xs) -> Mul (sortBy orderExpr xs)
+        (_,[]) -> C cprod
+        (_,xs) -> Mul (sortBy orderExpr (C cprod:xs))
+
+-- Constants first, then variables, then others
+orderExpr :: Expr -> Expr -> Ordering
+orderExpr (C _) (C _) = EQ
+orderExpr (C _) _     = LT
+orderExpr _ (C _)     = GT
+orderExpr (V a) (V b) = compare a b
+orderExpr (V _) _     = LT
+orderExpr _ (V _)     = GT
+orderExpr a b         = compare a b
 
 -- approximate equality for testing
 approx :: Double -> Double -> Bool
@@ -160,9 +221,38 @@ finiteDiff env f =
   in (eval envR f - eval envL f) / (2*h)
 
 
+-- Unit tests for simplifier
+testSimplifier :: IO ()
+testSimplifier = do
+  let t name expr expected =
+        let got = simplify expr
+        in if got == expected
+           then putStrLn $ "[OK] " ++ name ++
+                "\n  expr:      " ++ pp expr ++
+                "\n  expected:  " ++ pp expected ++
+                "\n  actual:    " ++ pp got ++ "\n"
+           else putStrLn $ "[FAIL] " ++ name ++
+                "\n  expr:      " ++ pp expr ++
+                "\n  expected:  " ++ pp expected ++
+                "\n  actual:    " ++ pp got ++ "\n"
+
+  -- Test addition flattening and constant folding
+  t "Add flatten" (Add [C 1, Add [C 2, V "x"]]) (Add [C 3, V "x"])
+  t "Mul flatten" (Mul [C 2, Mul [C 3, V "x"]]) (Mul [C 6, V "x"])
+  t "Zero add"    (Add [C 0, V "x"]) (V "x")
+  t "Zero mul"    (Mul [C 0, V "x"]) (C 0)
+  t "One mul"     (Mul [C 1, V "x"]) (V "x")
+  t "Combine like" (Add [Mul [C 2, V "x"], Mul [C 3, V "x"]]) (Mul [C 5, V "x"])
+  t "Mul constants" (Mul [C 2, C 3, V "x"]) (Mul [C 6, V "x"])
+  t "Add constants" (Add [C 2, C 3, V "x"]) (Add [C 5, V "x"])
+  t "Neg Neg" (Neg (Neg (V "x"))) (V "x")
+  t "Pow 0" (Pow (V "x") (C 0)) (C 1)
+  t "Pow 1" (Pow (V "x") (C 1)) (V "x")
+
 -- main function for testing
 main :: IO ()
 main = do
+  testSimplifier
   let x = V "x"
       env = M.fromList [("x", 2.0)]
   putStrLn ("d/dx x = " ++ pp (derive "x" x))
