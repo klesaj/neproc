@@ -77,7 +77,9 @@ parens False s = s
 eval :: M.Map Var Double -> Expr -> Double
 eval env = \case
   C r     -> fromRational r
-  V v     -> env M.! v
+  V v -> case M.lookup v env of
+            Just val -> val
+            Nothing  -> error ("Variable " ++ v ++ " not found in environment")
   Neg e   -> negate (eval env e)
   Add es  -> sum (map (eval env) es)
   Mul es  -> product (map (eval env) es)
